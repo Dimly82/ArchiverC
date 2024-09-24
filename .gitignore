@@ -1,6 +1,8 @@
+.idea/
 cmake-build-debug/
 test/
+
 *.arch
 *.out
-archive
-unarchive
+archiver
+unarchiver
