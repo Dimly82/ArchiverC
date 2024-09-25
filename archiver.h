@@ -23,12 +23,20 @@ typedef struct {
   char d_name[];
 } dir;
 
+void archive(const char *arch_name, const char *dir_path);
+
 void archive_file(const char *file_path, int archive_fd);
 
 void archive_directory(const char *directory_path, int archive_fd);
 
+void unarchive(const char *arch_path);
+
 void unarchive_file(int archive_fd);
 
 void unarchive_directory(int archive_fd);
+
+size_t rle_compress(const char *input, size_t input_size, char **output);
+
+size_t rle_decompress(const char *input, size_t input_size, char **output);
 
 #endif //ARCHIVER_ARCHIVER_H

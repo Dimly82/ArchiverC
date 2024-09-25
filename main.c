@@ -16,26 +16,12 @@ int main(int argc, char *argv[]) {
 #endif
 
 #ifndef UNARCH
-  int archive_fd = open(argv[1], O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+  archive(argv[1], argv[2]);
 #endif
 
 #ifdef UNARCH
-  int archive_fd = open(argv[1], O_RDONLY);
-#endif
-  if (archive_fd == -1) {
-    perror("open archive");
-    return 1;
-  }
-
-#ifndef UNARCH
-//  write(archive_fd, "#eto archiv", 11);
-  archive_directory(argv[2], archive_fd);
+  unarchive(argv[1]);
 #endif
 
-#ifdef UNARCH
-  unarchive_directory(archive_fd);
-#endif
-
-  close(archive_fd);
   return 0;
 }

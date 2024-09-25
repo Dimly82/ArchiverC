@@ -1,5 +1,16 @@
 #include "archiver.h"
 
+void archive(const char *arch_name, const char *dir_path) {
+  int archive_fd = open(arch_name, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+  if (archive_fd == -1) {
+    perror("open archive");
+    return;
+  }
+
+  archive_directory(dir_path, archive_fd);
+  close(archive_fd);
+}
+
 void archive_file(const char *file_path, int archive_fd) {
   struct stat st;
   if (stat(file_path, &st) == -1) {
@@ -21,12 +32,22 @@ void archive_file(const char *file_path, int archive_fd) {
       return;
     }
 
-    char buffer[BUF_SIZE];
-    ssize_t bytes_read;
-    while ((bytes_read = read(src_fd, buffer, BUF_SIZE)) > 0)
-      write(archive_fd, buffer, bytes_read);
-
+    char *buffer = malloc(st.st_size);
+    if (read(src_fd, buffer, st.st_size) != st.st_size) {
+      perror("read");
+      free(buffer);
+      close(src_fd);
+      return;
+    }
     close(src_fd);
+
+    char *compressed_data;
+    size_t compressed_size = rle_compress(buffer, st.st_size, &compressed_data);
+    free(buffer);
+
+    write(archive_fd, &compressed_size, sizeof(size_t));
+    write(archive_fd, compressed_data, compressed_size);
+    free(compressed_data);
   }
 }
 
@@ -76,6 +97,16 @@ void archive_directory(const char *directory_path, int archive_fd) {
   close(fd);
 }
 
+void unarchive(const char *arch_path) {
+  int archive_fd = open(arch_path, O_RDONLY);
+  if (archive_fd == -1) {
+    perror("open archive");
+    return;
+  }
+  unarchive_directory(archive_fd);
+  close(archive_fd);
+}
+
 void unarchive_file(int archive_fd) {
   size_t name_len;
   char file_name[PATH_MAX];
@@ -90,8 +121,6 @@ void unarchive_file(int archive_fd) {
   if (type == 'D') {
     char command[PATH_MAX + 10] = "";
     sprintf(command, "mkdir -p %s", file_name);
-//    system(command);
-//    if (mkdir(file_name, 0700) == -1 && errno != EEXIST) {
     if (system(command) == -1) {
       perror("mkdir");
       return;
@@ -104,39 +133,28 @@ void unarchive_file(int archive_fd) {
       return;
     }
 
-    char buffer[BUF_SIZE];
-    ssize_t bytes_left = file_size;
-    ssize_t bytes_read, bytes_written;
+    size_t compressed_size;
+    read(archive_fd, &compressed_size, sizeof(size_t));
 
-    while (bytes_left > 0) {
-      bytes_read = read(archive_fd, buffer, (bytes_left > BUF_SIZE) ? BUF_SIZE : bytes_left);
-      if (bytes_read == -1) {
-        perror("read");
-        close(fd);
-        return;
-      }
-
-      bytes_written = write(fd, buffer, bytes_read);
-      if (bytes_written == -1) {
-        perror("write");
-        close(fd);
-        return;
-      }
-
-      bytes_left -= bytes_read;
+    char *compressed_data = malloc(compressed_size);
+    if (read(archive_fd, compressed_data, compressed_size) != compressed_size) {
+      perror("read");
+      free(compressed_data);
+      close(fd);
+      return;
     }
+
+    char *decompressed_data;
+    size_t decompressed_size = rle_decompress(compressed_data, compressed_size, &decompressed_data);
+    free(compressed_data);
+
+    write(fd, decompressed_data, decompressed_size);
+    free(decompressed_data);
     close(fd);
   }
 }
 
 void unarchive_directory(int archive_fd) {
-//  char test_str[11];
-//  read(archive_fd, test_str, 11);
-//  if (strcmp(test_str, "#eto archiv") != 0) {
-//    write(2, "File is not an archive", 22);
-//    return;
-//  }
-
   while (1) {
     size_t name_len;
     char type;
@@ -156,4 +174,47 @@ void unarchive_directory(int archive_fd) {
       unarchive_file(archive_fd);
     else return;
   }
+}
+
+size_t rle_compress(const char *input, size_t input_size, char **output) {
+  *output = malloc(2 * input_size);
+  if (!(*output)) {
+    perror("malloc");
+    exit(1);
+  }
+
+  size_t out_index = 0;
+  for (size_t i = 0; i < input_size;) {
+    char current_ch = input[i];
+    size_t run_len = 1;
+    while (i + run_len < input_size && input[i + run_len] == current_ch && run_len < 255)
+      run_len++;
+
+    (*output)[out_index++] = (char) run_len;
+    (*output)[out_index++] = current_ch;
+
+    i += run_len;
+  }
+
+  return out_index;
+}
+
+size_t rle_decompress(const char *input, size_t input_size, char **output) {
+  *output = malloc(input_size * 255);
+  if (*output == NULL) {
+    perror("malloc");
+    exit(1);
+  }
+
+  size_t out_index = 0;
+  for (size_t i = 0; i < input_size; i += 2) {
+    char run_length = input[i];
+    char current_char = input[i + 1];
+
+    for (int j = 0; j < run_length; j++) {
+      (*output)[out_index++] = current_char;
+    }
+  }
+
+  return out_index;
 }
