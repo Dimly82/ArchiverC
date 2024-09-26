@@ -23,17 +23,17 @@ typedef struct {
   char d_name[];
 } dir;
 
-void archive(const char *arch_name, const char *dir_path);
+void archive(const char *arch_name, const char *dir_path, const char *def_dir);
 
 void archive_file(const char *file_path, int archive_fd);
 
 void archive_directory(const char *directory_path, int archive_fd);
 
-void unarchive(const char *arch_path);
+void unarchive(const char *arch_path, const char *dir_path);
 
-void unarchive_file(int archive_fd);
+void unarchive_file(int archive_fd, const char *dir_path);
 
-void unarchive_directory(int archive_fd);
+void unarchive_directory(int archive_fd, const char *dir_path);
 
 size_t rle_compress(const char *input, size_t input_size, char **output);
 

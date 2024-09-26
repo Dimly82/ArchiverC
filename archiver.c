@@ -1,14 +1,22 @@
 #include "archiver.h"
 
-void archive(const char *arch_name, const char *dir_path) {
+void archive(const char *arch_name, const char *dir_path, const char *def_dir) {
+  char *full_path = malloc(sizeof(char) * PATH_MAX);
+  char *command = malloc(sizeof(char) * PATH_MAX + 8);
+  sprintf(full_path, "%s/%s", def_dir, arch_name);
+  sprintf(command, "mkdir -p %s", def_dir);
+  system(command);
+
   int archive_fd =
-      open(arch_name, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+      open(full_path, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
   if (archive_fd == -1) {
     perror("open archive");
     return;
   }
 
   archive_directory(dir_path, archive_fd);
+  free(full_path);
+  free(command);
   close(archive_fd);
 }
 
@@ -126,17 +134,22 @@ void archive_directory(const char *directory_path, int archive_fd) {
   close(fd);
 }
 
-void unarchive(const char *arch_path) {
+void unarchive(const char *arch_path, const char *dir_path) {
+  char *command = malloc(sizeof(char) * PATH_MAX + 8);
+  sprintf(command, "mkdir -p %s", dir_path);
+  system(command);
+
   int archive_fd = open(arch_path, O_RDONLY);
   if (archive_fd == -1) {
     perror("open archive");
     return;
   }
-  unarchive_directory(archive_fd);
+  unarchive_directory(archive_fd, dir_path);
+  free(command);
   close(archive_fd);
 }
 
-void unarchive_file(int archive_fd) {
+void unarchive_file(int archive_fd, const char *dir_path) {
   size_t name_len;
   char file_name[PATH_MAX];
   char type;
@@ -147,16 +160,20 @@ void unarchive_file(int archive_fd) {
   read(archive_fd, file_name, name_len);
   read(archive_fd, &file_size, sizeof(off_t));
 
+  char *full_path =
+      malloc(sizeof(char) * (strlen(file_name) + strlen(dir_path)) + 1);
+  sprintf(full_path, "%s/%s", dir_path, file_name);
+
   if (type == 'D') {
     char command[PATH_MAX + 10] = "";
-    sprintf(command, "mkdir -p %s", file_name);
+    sprintf(command, "mkdir -p %s", full_path);
     if (system(command) == -1) {
       perror("mkdir");
       return;
     }
-    unarchive_directory(archive_fd);
+    unarchive_directory(archive_fd, dir_path);
   } else if (type == 'F') {
-    int fd = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    int fd = open(full_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd == -1) {
       perror("open");
       return;
@@ -182,9 +199,10 @@ void unarchive_file(int archive_fd) {
     free(decompressed_data);
     close(fd);
   }
+  free(full_path);
 }
 
-void unarchive_directory(int archive_fd) {
+void unarchive_directory(int archive_fd, const char *dir_path) {
   while (1) {
     size_t name_len;
     char type;
@@ -201,7 +219,7 @@ void unarchive_directory(int archive_fd) {
     read(archive_fd, &type, sizeof(char));
     lseek(archive_fd, curr_pos, SEEK_SET);
     if (type == 'D' || type == 'F')
-      unarchive_file(archive_fd);
+      unarchive_file(archive_fd, dir_path);
     else
       return;
   }
