@@ -3,7 +3,8 @@
 int main(int argc, char *argv[]) {
 #ifndef UNARCH
   if (argc < 3) {
-    fprintf(stderr, "Usage: %s <archive> <directory> <default directory>\n", argv[0]);
+    fprintf(stderr, "Usage: %s <archive> <directory> <default directory>\n",
+            argv[0]);
     return 1;
   }
 #endif

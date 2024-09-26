@@ -8,5 +8,8 @@ archiver: main.c archiver.c archiver.h
 unarchiver: main.c archiver.c archiver.h
 	$(CC) $^ -DUNARCH -o $@
 
+format:
+	clang-format --verbose -i *.c *.h
+
 clean:
 	rm -rf archiver unarchiver

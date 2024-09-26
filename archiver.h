@@ -3,15 +3,15 @@
 
 #define _GNU_SOURCE
 
-#include <stdio.h>
-#include <sys/stat.h>
+#include <errno.h>
 #include <fcntl.h>
-#include <unistd.h>
+#include <linux/limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <linux/limits.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
-#include <errno.h>
+#include <unistd.h>
 
 #define BUF_SIZE 1024
 #define D_TYPE_DIR 4
@@ -39,4 +39,4 @@ size_t rle_compress(const char *input, size_t input_size, char **output);
 
 size_t rle_decompress(const char *input, size_t input_size, char **output);
 
-#endif //ARCHIVER_ARCHIVER_H
+#endif // ARCHIVER_ARCHIVER_H

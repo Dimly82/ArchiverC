@@ -1,7 +1,8 @@
 #include "archiver.h"
 
 void archive(const char *arch_name, const char *dir_path) {
-  int archive_fd = open(arch_name, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+  int archive_fd =
+      open(arch_name, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
   if (archive_fd == -1) {
     perror("open archive");
     return;
@@ -59,13 +60,13 @@ void archive_directory(const char *directory_path, int archive_fd) {
   }
 
   char buffer[BUF_SIZE];
-  int nread;
+  ssize_t nread;
   dir *d;
   int bpos;
 
   while ((nread = syscall(SYS_getdents, fd, buffer, BUF_SIZE)) > 0) {
     for (bpos = 0; bpos < nread;) {
-      d = (dir *) (buffer + bpos);
+      d = (dir *)(buffer + bpos);
       char *entry_name = d->d_name;
 
       if (!strcmp(entry_name, ".") || !strcmp(entry_name, "..")) {
@@ -86,12 +87,40 @@ void archive_directory(const char *directory_path, int archive_fd) {
       if (S_ISDIR(st.st_mode)) {
         archive_file(full_path, archive_fd);
         archive_directory(full_path, archive_fd);
-      } else if (S_ISREG(st.st_mode))
+      }
+      bpos += d->d_reclen;
+    }
+  }
+  if (nread == -1)
+    perror("getdents");
+
+  lseek(fd, 0, SEEK_SET);
+
+  while ((nread = syscall(SYS_getdents, fd, buffer, BUF_SIZE)) > 0) {
+    for (bpos = 0; bpos < nread;) {
+      d = (dir *)(buffer + bpos);
+      char *entry_name = d->d_name;
+
+      if (!strcmp(entry_name, ".") || !strcmp(entry_name, "..")) {
+        bpos += d->d_reclen;
+        continue;
+      }
+
+      char full_path[PATH_MAX];
+      snprintf(full_path, PATH_MAX, "%s/%s", directory_path, entry_name);
+
+      struct stat st;
+      if (stat(full_path, &st) == -1) {
+        perror("stat");
+        bpos += d->d_reclen;
+        continue;
+      }
+
+      if (S_ISREG(st.st_mode))
         archive_file(full_path, archive_fd);
       bpos += d->d_reclen;
     }
   }
-
   if (nread == -1)
     perror("getdents");
   close(fd);
@@ -145,7 +174,8 @@ void unarchive_file(int archive_fd) {
     }
 
     char *decompressed_data;
-    size_t decompressed_size = rle_decompress(compressed_data, compressed_size, &decompressed_data);
+    size_t decompressed_size =
+        rle_decompress(compressed_data, compressed_size, &decompressed_data);
     free(compressed_data);
 
     write(fd, decompressed_data, decompressed_size);
@@ -172,7 +202,8 @@ void unarchive_directory(int archive_fd) {
     lseek(archive_fd, curr_pos, SEEK_SET);
     if (type == 'D' || type == 'F')
       unarchive_file(archive_fd);
-    else return;
+    else
+      return;
   }
 }
 
@@ -187,10 +218,11 @@ size_t rle_compress(const char *input, size_t input_size, char **output) {
   for (size_t i = 0; i < input_size;) {
     char current_ch = input[i];
     size_t run_len = 1;
-    while (i + run_len < input_size && input[i + run_len] == current_ch && run_len < 255)
+    while (i + run_len < input_size && input[i + run_len] == current_ch &&
+           run_len < 255)
       run_len++;
 
-    (*output)[out_index++] = (char) run_len;
+    (*output)[out_index++] = (char)run_len;
     (*output)[out_index++] = current_ch;
 
     i += run_len;
