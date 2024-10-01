@@ -1,5 +1,6 @@
 #include "archiver.h"
 
+// Gets the last directory in given path
 char *get_base_path(const char *full_path) {
   char *base_path = malloc(sizeof(char) * PATH_MAX);
   char *prev_token = malloc(sizeof(char) * PATH_MAX);
@@ -53,18 +54,27 @@ void archive(const char *arch_name, const char *dir_path, const char *def_dir) {
   write(archive_fd, base_path, name_len);
   write(archive_fd, &st.st_size, sizeof(off64_t));
 
-  archive_directory(dir_path, base_path, archive_fd);
+  int err = archive_directory(dir_path, base_path, archive_fd);
+  char abs_path[PATH_MAX];
+  realpath(full_path, abs_path);
+  if (!err)
+    printf("\033[0;32mArchive was successfully created at: %s\033[0m\n",
+           abs_path);
+  else
+    printf("\033[0;31mAn error occurred\033[0m\n");
   free(full_path);
   free(command);
   free(base_path);
   close(archive_fd);
 }
 
-void archive_file(const char *file_path, const char *base_dir, int archive_fd) {
+int archive_file(const char *file_path, const char *base_dir, int archive_fd) {
+  printf("\033[0;33mArchiving %s\033[0m\n", file_path);
+
   struct stat64 st;
   if (stat64(file_path, &st) == -1) {
     perror("stat64");
-    return;
+    return -1;
   }
 
   char *new_path;
@@ -80,7 +90,7 @@ void archive_file(const char *file_path, const char *base_dir, int archive_fd) {
     int src_fd = open(file_path, O_RDONLY);
     if (src_fd == -1) {
       perror("open");
-      return;
+      return -1;
     }
 
     char *buffer = malloc(st.st_size);
@@ -88,7 +98,7 @@ void archive_file(const char *file_path, const char *base_dir, int archive_fd) {
       perror("read");
       free(buffer);
       close(src_fd);
-      return;
+      return -1;
     }
     close(src_fd);
 
@@ -100,14 +110,15 @@ void archive_file(const char *file_path, const char *base_dir, int archive_fd) {
     write(archive_fd, compressed_data, compressed_size);
     free(compressed_data);
   }
+  return 0;
 }
 
-void archive_directory(const char *directory_path, const char *base_dir,
-                       int archive_fd) {
+int archive_directory(const char *directory_path, const char *base_dir,
+                      int archive_fd) {
   int fd = open(directory_path, O_RDONLY | O_DIRECTORY);
   if (fd == -1) {
     perror("open");
-    return;
+    return -1;
   }
 
   char buffer[BUF_SIZE];
@@ -175,6 +186,7 @@ void archive_directory(const char *directory_path, const char *base_dir,
   if (nread == -1)
     perror("getdents");
   close(fd);
+  return 0;
 }
 
 void unarchive(const char *arch_path, const char *dir_path) {
@@ -190,12 +202,19 @@ void unarchive(const char *arch_path, const char *dir_path) {
     perror("open archive");
     return;
   }
-  unarchive_directory(archive_fd, dir_path);
+  int err = unarchive_directory(archive_fd, dir_path);
+  char abs_path[PATH_MAX];
+  realpath(dir_path, abs_path);
+  if (!err)
+    printf("\033[0;32mArchive was successfully unarchived to: %s\033[0m\n",
+           abs_path);
+  else
+    printf("\033[0;31mAn error occurred\033[0m\n");
   free(command);
   close(archive_fd);
 }
 
-void unarchive_file(int archive_fd, const char *dir_path) {
+int unarchive_file(int archive_fd, const char *dir_path) {
   size_t name_len;
   char file_name[PATH_MAX];
   char type;
@@ -206,6 +225,8 @@ void unarchive_file(int archive_fd, const char *dir_path) {
   read(archive_fd, file_name, name_len);
   read(archive_fd, &file_size, sizeof(off64_t));
 
+  printf("\033[0;33mUnarchiving %s\033[0m\n", file_name);
+
   char *full_path =
       malloc(sizeof(char) * (strlen(file_name) + strlen(dir_path)) + 1);
   sprintf(full_path, "%s/%s", dir_path, file_name);
@@ -215,14 +236,14 @@ void unarchive_file(int archive_fd, const char *dir_path) {
     sprintf(command, "mkdir -p \"%s\"", full_path);
     if (system(command) != 0) {
       perror("mkdir");
-      return;
+      return -1;
     }
     unarchive_directory(archive_fd, dir_path);
   } else if (type == 'F') {
     int fd = open(full_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd == -1) {
       perror("open");
-      return;
+      return -1;
     }
 
     size_t compressed_size;
@@ -233,7 +254,7 @@ void unarchive_file(int archive_fd, const char *dir_path) {
       perror("read");
       free(compressed_data);
       close(fd);
-      return;
+      return -1;
     }
 
     char *decompressed_data;
@@ -246,9 +267,10 @@ void unarchive_file(int archive_fd, const char *dir_path) {
     close(fd);
   }
   free(full_path);
+  return 0;
 }
 
-void unarchive_directory(int archive_fd, const char *dir_path) {
+int unarchive_directory(int archive_fd, const char *dir_path) {
   while (1) {
     size_t name_len;
     char type;
@@ -256,10 +278,10 @@ void unarchive_directory(int archive_fd, const char *dir_path) {
     off64_t curr_pos = lseek64(archive_fd, 0, SEEK_CUR);
     ssize_t bytes_read = read(archive_fd, &name_len, sizeof(size_t));
     if (bytes_read == 0)
-      return;
+      return 0;
     if (bytes_read == -1) {
       perror("read");
-      return;
+      return -1;
     }
 
     read(archive_fd, &type, sizeof(char));
@@ -267,7 +289,7 @@ void unarchive_directory(int archive_fd, const char *dir_path) {
     if (type == 'D' || type == 'F')
       unarchive_file(archive_fd, dir_path);
     else
-      return;
+      return -1;
   }
 }
 
