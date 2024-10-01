@@ -1,11 +1,37 @@
 #include "archiver.h"
 
+char *get_base_path(const char *full_path) {
+  char *base_path = malloc(sizeof(char) * PATH_MAX);
+  char *prev_token = malloc(sizeof(char) * PATH_MAX);
+  char *full_path_cp = malloc(sizeof(char) * strlen(full_path) + 1);
+
+  strcpy(full_path_cp, full_path);
+  char *token = strtok(full_path_cp, "/");
+  strcpy(prev_token, token);
+  while (token) {
+    token = strtok(NULL, "/");
+    if (token)
+      strcpy(prev_token, token);
+  }
+
+  strcpy(base_path, prev_token);
+
+  free(full_path_cp);
+  free(prev_token);
+  return base_path;
+}
+
 void archive(const char *arch_name, const char *dir_path, const char *def_dir) {
   char *full_path = malloc(sizeof(char) * PATH_MAX);
   char *command = malloc(sizeof(char) * PATH_MAX + 8);
   sprintf(full_path, "%s/%s", def_dir, arch_name);
-  sprintf(command, "mkdir -p %s", def_dir);
-  system(command);
+  sprintf(command, "mkdir -p \"%s\"", def_dir);
+  if (system(command) != 0) {
+    perror("mkdir");
+    return;
+  }
+
+  char *base_path = get_base_path(dir_path);
 
   int archive_fd =
       open(full_path, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
@@ -14,25 +40,41 @@ void archive(const char *arch_name, const char *dir_path, const char *def_dir) {
     return;
   }
 
-  archive_directory(dir_path, archive_fd);
-  free(full_path);
-  free(command);
-  close(archive_fd);
-}
-
-void archive_file(const char *file_path, int archive_fd) {
-  struct stat st;
-  if (stat(file_path, &st) == -1) {
-    perror("stat");
+  struct stat64 st;
+  if (stat64(dir_path, &st) == -1) {
+    perror("stat64");
     return;
   }
 
-  size_t name_len = strlen(file_path) + 1;
+  size_t name_len = strlen(base_path);
+  char type = 'D';
+  write(archive_fd, &name_len, sizeof(size_t));
+  write(archive_fd, &type, sizeof(char));
+  write(archive_fd, base_path, name_len);
+  write(archive_fd, &st.st_size, sizeof(off64_t));
+
+  archive_directory(dir_path, base_path, archive_fd);
+  free(full_path);
+  free(command);
+  free(base_path);
+  close(archive_fd);
+}
+
+void archive_file(const char *file_path, const char *base_dir, int archive_fd) {
+  struct stat64 st;
+  if (stat64(file_path, &st) == -1) {
+    perror("stat64");
+    return;
+  }
+
+  char *new_path;
+  new_path = strstr(file_path, base_dir);
+  size_t name_len = strlen(new_path) + 1;
   write(archive_fd, &name_len, sizeof(size_t));
   char type = S_ISDIR(st.st_mode) ? 'D' : 'F';
   write(archive_fd, &type, sizeof(char));
-  write(archive_fd, file_path, name_len);
-  write(archive_fd, &st.st_size, sizeof(off_t));
+  write(archive_fd, new_path, name_len);
+  write(archive_fd, &st.st_size, sizeof(off64_t));
 
   if (S_ISREG(st.st_mode)) {
     int src_fd = open(file_path, O_RDONLY);
@@ -42,7 +84,7 @@ void archive_file(const char *file_path, int archive_fd) {
     }
 
     char *buffer = malloc(st.st_size);
-    if (read(src_fd, buffer, st.st_size) != st.st_size) {
+    if ((read(src_fd, buffer, st.st_size)) != st.st_size) {
       perror("read");
       free(buffer);
       close(src_fd);
@@ -60,7 +102,8 @@ void archive_file(const char *file_path, int archive_fd) {
   }
 }
 
-void archive_directory(const char *directory_path, int archive_fd) {
+void archive_directory(const char *directory_path, const char *base_dir,
+                       int archive_fd) {
   int fd = open(directory_path, O_RDONLY | O_DIRECTORY);
   if (fd == -1) {
     perror("open");
@@ -93,8 +136,8 @@ void archive_directory(const char *directory_path, int archive_fd) {
       }
 
       if (S_ISDIR(st.st_mode)) {
-        archive_file(full_path, archive_fd);
-        archive_directory(full_path, archive_fd);
+        archive_file(full_path, base_dir, archive_fd);
+        archive_directory(full_path, base_dir, archive_fd);
       }
       bpos += d->d_reclen;
     }
@@ -125,7 +168,7 @@ void archive_directory(const char *directory_path, int archive_fd) {
       }
 
       if (S_ISREG(st.st_mode))
-        archive_file(full_path, archive_fd);
+        archive_file(full_path, base_dir, archive_fd);
       bpos += d->d_reclen;
     }
   }
@@ -136,8 +179,11 @@ void archive_directory(const char *directory_path, int archive_fd) {
 
 void unarchive(const char *arch_path, const char *dir_path) {
   char *command = malloc(sizeof(char) * PATH_MAX + 8);
-  sprintf(command, "mkdir -p %s", dir_path);
-  system(command);
+  sprintf(command, "mkdir -p \"%s\"", dir_path);
+  if (system(command) != 0) {
+    perror("mkdir");
+    return;
+  }
 
   int archive_fd = open(arch_path, O_RDONLY);
   if (archive_fd == -1) {
@@ -153,12 +199,12 @@ void unarchive_file(int archive_fd, const char *dir_path) {
   size_t name_len;
   char file_name[PATH_MAX];
   char type;
-  off_t file_size;
+  off64_t file_size;
 
   read(archive_fd, &name_len, sizeof(size_t));
   read(archive_fd, &type, sizeof(char));
   read(archive_fd, file_name, name_len);
-  read(archive_fd, &file_size, sizeof(off_t));
+  read(archive_fd, &file_size, sizeof(off64_t));
 
   char *full_path =
       malloc(sizeof(char) * (strlen(file_name) + strlen(dir_path)) + 1);
@@ -166,8 +212,8 @@ void unarchive_file(int archive_fd, const char *dir_path) {
 
   if (type == 'D') {
     char command[PATH_MAX + 10] = "";
-    sprintf(command, "mkdir -p %s", full_path);
-    if (system(command) == -1) {
+    sprintf(command, "mkdir -p \"%s\"", full_path);
+    if (system(command) != 0) {
       perror("mkdir");
       return;
     }
@@ -207,7 +253,7 @@ void unarchive_directory(int archive_fd, const char *dir_path) {
     size_t name_len;
     char type;
 
-    off_t curr_pos = lseek(archive_fd, 0, SEEK_CUR);
+    off64_t curr_pos = lseek64(archive_fd, 0, SEEK_CUR);
     ssize_t bytes_read = read(archive_fd, &name_len, sizeof(size_t));
     if (bytes_read == 0)
       return;
@@ -217,7 +263,7 @@ void unarchive_directory(int archive_fd, const char *dir_path) {
     }
 
     read(archive_fd, &type, sizeof(char));
-    lseek(archive_fd, curr_pos, SEEK_SET);
+    lseek64(archive_fd, curr_pos, SEEK_SET);
     if (type == 'D' || type == 'F')
       unarchive_file(archive_fd, dir_path);
     else

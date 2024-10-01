@@ -23,11 +23,14 @@ typedef struct {
   char d_name[];
 } dir;
 
+char *get_base_path(const char *full_path);
+
 void archive(const char *arch_name, const char *dir_path, const char *def_dir);
 
-void archive_file(const char *file_path, int archive_fd);
+void archive_file(const char *file_path, const char *base_dir, int archive_fd);
 
-void archive_directory(const char *directory_path, int archive_fd);
+void archive_directory(const char *directory_path, const char *base_dir,
+                       int archive_fd);
 
 void unarchive(const char *arch_path, const char *dir_path);
 

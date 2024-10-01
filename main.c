@@ -1,5 +1,7 @@
 #include "archiver.h"
 
+#define UNARCH
+
 int main(int argc, char *argv[]) {
 #ifndef UNARCH
   if (argc < 3) {
